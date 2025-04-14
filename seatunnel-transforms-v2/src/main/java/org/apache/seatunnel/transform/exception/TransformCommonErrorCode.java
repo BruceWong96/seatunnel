@@ -25,7 +25,11 @@ public enum TransformCommonErrorCode implements SeaTunnelErrorCode {
             "The input field '<field>' of '<transform>' transform not found in upstream schema"),
     INPUT_FIELDS_NOT_FOUND(
             "TRANSFORM_COMMON-02",
-            "The input fields '<fields>' of '<transform>' transform not found in upstream schema");
+            "The input fields '<fields>' of '<transform>' transform not found in upstream schema"),
+
+    INPUT_FIELD_CAST_FAILED(
+            "TRANSFORM_COMMON-03",
+            "The input field '<field>' of '<transform>' transform can not cast to '<dataType>'");
 
     private final String code;
     private final String description;

@@ -24,6 +24,7 @@ import org.apache.seatunnel.api.table.type.SeaTunnelRow;
 import org.apache.seatunnel.api.table.type.SeaTunnelRowType;
 import org.apache.seatunnel.api.table.type.SqlType;
 import org.apache.seatunnel.common.exception.CommonErrorCodeDeprecated;
+import org.apache.seatunnel.transform.exception.TransformCommonError;
 import org.apache.seatunnel.transform.exception.TransformException;
 import org.apache.seatunnel.transform.sql.zeta.functions.DateTimeFunction;
 import org.apache.seatunnel.transform.sql.zeta.functions.NumericFunction;
@@ -311,12 +312,24 @@ public class ZetaSQLFunction {
         if (expression instanceof CastExpression) {
             CastExpression castExpression = (CastExpression) expression;
             Expression leftExpr = castExpression.getLeftExpression();
+            String sourceIdentifier = getExpressionIdentifier(leftExpr);
             Object leftValue = computeForValue(leftExpr, inputFields);
-            return executeCastExpr(castExpression, leftValue);
+            return executeCastExpr(castExpression, leftValue, sourceIdentifier);
         }
         throw new TransformException(
                 CommonErrorCodeDeprecated.UNSUPPORTED_OPERATION,
                 String.format("Unsupported SQL Expression: %s ", expression.toString()));
+    }
+
+    private String getExpressionIdentifier(Expression expression) {
+        if (expression instanceof Column) {
+            Column column = (Column) expression;
+            return column.getColumnName();
+        } else if (expression instanceof CastExpression) {
+            return getExpressionIdentifier(((CastExpression) expression).getLeftExpression());
+        } else {
+            return expression.toString();
+        }
     }
 
     public Object executeCaseExpr(CaseExpression caseExpression, Object[] inputFields) {
@@ -544,17 +557,26 @@ public class ZetaSQLFunction {
                 String.format("Unsupported TimeKey expression: %s", timeKeyExpr));
     }
 
-    public Object executeCastExpr(CastExpression castExpression, Object arg) {
-        String dataType = castExpression.getType().getDataType();
-        List<Object> args = new ArrayList<>(2);
-        args.add(arg);
-        args.add(dataType.toUpperCase());
-        if (dataType.equalsIgnoreCase("DECIMAL")) {
-            List<String> ps = castExpression.getType().getArgumentsStringList();
-            args.add(Integer.parseInt(ps.get(0)));
-            args.add(Integer.parseInt(ps.get(1)));
+    public Object executeCastExpr(CastExpression castExpression, Object arg, String sourceIdentifier) {
+        try {
+            String dataType = castExpression.getType().getDataType();
+            List<Object> args = new ArrayList<>(2);
+            args.add(arg);
+            args.add(dataType.toUpperCase());
+            if (dataType.equalsIgnoreCase("DECIMAL")) {
+                List<String> ps = castExpression.getType().getArgumentsStringList();
+                args.add(Integer.parseInt(ps.get(0)));
+                args.add(Integer.parseInt(ps.get(1)));
+            }
+            Object result = SystemFunction.castAs(args);
+            if (result == null) {
+                throw new IllegalArgumentException("Unsupported cast operation");
+            }
+            return result;
+        } catch (Exception e) {
+            String targetType = castExpression.getType().getDataType().toUpperCase();
+            throw TransformCommonError.cannotCastInputFieldError("SQL", sourceIdentifier, targetType);
         }
-        return SystemFunction.castAs(args);
     }
 
     private Object executeBinaryExpr(BinaryExpression binaryExpression, Object[] inputFields) {
